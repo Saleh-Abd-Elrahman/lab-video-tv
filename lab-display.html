@@ -10,8 +10,9 @@
   SETUP
   1. Set PLAYLIST_ID below to the "list=" value from the playlist URL.
         https://www.youtube.com/playlist?list=PLabc123...   ->  'PLabc123...'
-  2. Keep logo.png (top left), CPL_Logo.png (top right) and school1.png
-     (centred below the pair) in the same folder as this file.
+  2. Keep all four logos in the same folder as this file. They sit in a 2x2
+     grid: logo.png and CPL_Logo.png on top, school1.png and AccentColo.png
+     smaller beneath them.
   3. Serve the folder over HTTP — opening the file directly with file:// breaks
      the YouTube embed:
         cd /path/to/this/folder
@@ -28,7 +29,8 @@
     --row-height: 58vh;         /* height of the top pair */
     --stack-gap: 2vh;           /* pair -> school logo */
     --wordmark-lift: 6vh;       /* how much higher the right logo rides */
-    --school-height: 24vh;      /* size of the school lockup below */
+    --small-height: 18vh;       /* height of the bottom pair's cells */
+    --small-width: 28%;         /* both bottom logos render to this width */
     --fade: 700ms;
   }
 
@@ -52,12 +54,20 @@
   }
   #logo.visible { opacity: 1; visibility: visible; }
 
-  /* Top pair: each takes half the width, contain keeps its own aspect ratio. */
+  /* Both rows split the width in half, so all four logos share two columns
+     and the card stays symmetrical about the centre line. */
   #logo .pair {
     display: flex; align-items: center; justify-content: center;
     gap: var(--logo-gap); width: 100%; height: var(--row-height);
   }
+  #logo .pair.small { height: var(--small-height); }
   #logo .pair img { flex: 1 1 0; min-width: 0; max-height: 100%; object-fit: contain; }
+
+  /* The bottom two have very different aspect ratios (2.68 vs 5.30), so left to
+     fill their cells they'd render at wildly different sizes. Capping both to
+     one width makes them even; the auto margins keep each centred on the same
+     column as the logo above it. */
+  #logo .pair.small img { max-width: var(--small-width); margin-inline: auto; }
 
   /* CPL_Logo.png is black-on-white, the inverse of logo.png's white-on-dark.
      Inverting it gives white-on-black, and screen blending drops that black
@@ -68,11 +78,16 @@
   }
 
   /* school1.png is black artwork on transparency, so inverting alone turns it
-     white — no blend mode needed, the transparency already lets the card show. */
-  #logo .school {
-    height: var(--school-height); max-width: 45%;
-    object-fit: contain; filter: invert(1);
-  }
+     white — no blend mode needed, the transparency already lets the card show.
+     Plain invert is required here: the "ie" is knocked out of a solid disc, and
+     flattening to a silhouette first would swallow the letters. */
+  #logo .school { filter: invert(1); }
+
+  /* AccentColo.png is navy (#000066) on transparency, which would read as near
+     black on this backdrop. brightness(0) flattens it to a silhouette and
+     invert(1) turns that white, matching the other three. Safe here because
+     the wordmark has no knocked-out detail to lose. */
+  #logo .iex { filter: brightness(0) invert(1); }
 
   /* Browsers block sound until someone interacts with the page once. */
   #start {
@@ -95,7 +110,10 @@
     <img src="logo.png" alt="">
     <img class="wordmark" src="CPL_Logo.png" alt="">
   </div>
-  <img class="school" src="school1.png" alt="">
+  <div class="pair small">
+    <img class="school" src="school1.png" alt="">
+    <img class="iex" src="AccentColo.png" alt="">
+  </div>
 </div>
 
 <button id="start" type="button">Click to start the display</button>
