@@ -10,7 +10,8 @@
   SETUP
   1. Set PLAYLIST_ID below to the "list=" value from the playlist URL.
         https://www.youtube.com/playlist?list=PLabc123...   ->  'PLabc123...'
-  2. Put logo.png in the same folder as this file (PNG or SVG, transparent is fine).
+  2. Keep logo.png (left) and CPL_Logo.png (right) in the same folder as this
+     file. Both are shown side by side, each filling half the width.
   3. Serve the folder over HTTP — opening the file directly with file:// breaks
      the YouTube embed:
         cd /path/to/this/folder
@@ -21,8 +22,9 @@
 -->
 <style>
   :root {
-    --logo-backdrop: #231f20;   /* matches the logo's own background */
-    --logo-size: 100%;          /* logo size as a share of the screen */
+    --logo-backdrop: #231f20;   /* matches logo.png's own background */
+    --logo-gap: 4vw;            /* space between the two logos */
+    --logo-pad: 5vh 4vw;        /* breathing room around the pair */
     --fade: 700ms;
   }
 
@@ -38,12 +40,20 @@
   #logo {
     position: fixed; inset: 0; z-index: 10;
     display: flex; align-items: center; justify-content: center;
+    gap: var(--logo-gap); padding: var(--logo-pad); box-sizing: border-box;
     background: var(--logo-backdrop);
     opacity: 0; visibility: hidden;
     transition: opacity var(--fade) ease, visibility var(--fade);
   }
   #logo.visible { opacity: 1; visibility: visible; }
-  #logo img { width: var(--logo-size); height: var(--logo-size); object-fit: contain; }
+
+  /* Each logo takes half the width; contain keeps its own aspect ratio. */
+  #logo img { flex: 1 1 0; min-width: 0; max-height: 100%; object-fit: contain; }
+
+  /* CPL_Logo.png is black-on-white, the inverse of logo.png's white-on-dark.
+     Inverting it gives white-on-black, and screen blending drops that black
+     into the backdrop, so both logos sit on one seamless dark card. */
+  #logo .wordmark { filter: invert(1); mix-blend-mode: screen; }
 
   /* Browsers block sound until someone interacts with the page once. */
   #start {
@@ -63,6 +73,7 @@
 
 <div id="logo" aria-hidden="true">
   <img src="logo.png" alt="">
+  <img class="wordmark" src="CPL_Logo.png" alt="">
 </div>
 
 <button id="start" type="button">Click to start the display</button>
@@ -71,7 +82,7 @@
 /* ---- Settings ------------------------------------------------------ */
 const PLAYLIST_ID   = 'PLjxddgZe17mykjPF2kbzCZFfGsw20HU1p';
 const EVERY         = 3;      // show the logo after this many videos
-const LOGO_SECONDS  = 10;     // how long it stays up
+const LOGO_SECONDS  = 5;      // how long it stays up
 const SHUFFLE       = false;  // true to shuffle the playlist
 /* ------------------------------------------------------------------- */
 
