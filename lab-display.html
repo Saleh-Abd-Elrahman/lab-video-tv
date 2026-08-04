@@ -26,10 +26,16 @@
     --logo-backdrop: #231f20;   /* matches logo.png's own background */
     --logo-gap: 4vw;            /* space between the left logo and right column */
     --logo-pad: 5vh 4vw;        /* breathing room around the card */
-    --stack-gap: 4vh;           /* wordmark -> the two small logos */
-    --small-gap: 3vw;           /* between the two small logos */
+    --stack-gap: 1.5vh;         /* wordmark -> the two small logos */
+    --small-gap: 2vw;           /* minimum space between the two small logos */
     --small-height: 11vh;       /* height of the small logos' row */
-    --small-width: 36%;         /* both small logos render to this width */
+    --small-width: 41%;         /* both small logos render to this width */
+    --wordmark-max-h: 50vh;     /* only a guard; the wordmark is width-driven */
+    /* Measured ink bounds of CPL_Logo.png: the C starts at 5.2% of the canvas
+       and the L ends at 92.8% (margins are uneven, 47px vs 65px). The bottom
+       row is inset to match, so it starts under the C and ends under the L. */
+    --cpl-ink-start: 5.2%;
+    --cpl-ink-span: 87.6%;
     --fade: 700ms;
   }
 
@@ -65,25 +71,30 @@
     flex: 1 1 0; min-width: 0; height: 100%; box-sizing: border-box;
     padding-top: calc(var(--small-height) + var(--stack-gap));
     display: flex; flex-direction: column; align-items: center;
-    gap: var(--stack-gap);
+    justify-content: center; gap: var(--stack-gap);
   }
+  /* .top hugs the wordmark rather than flexing, so the gap below it is exactly
+     --stack-gap instead of that plus half the leftover row height. */
   #logo .right .top {
-    flex: 1 1 0; min-height: 0; width: 100%;
+    flex: 0 0 auto; width: 100%;
     display: flex; align-items: center; justify-content: center;
   }
-  #logo .right .top img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  #logo .right .top img { max-width: 100%; max-height: var(--wordmark-max-h); }
 
   /* The two small logos have very different aspect ratios (2.68 vs 5.30), so
      left to fill their cells they'd render at wildly different sizes. Capping
      both to one width makes them even; auto margins centre each in its half. */
+  /* Inset to the wordmark's ink span and justified to its ends, so the left
+     logo starts under the C and the right one finishes under the L. */
   #logo .small-pair {
-    flex: 0 0 auto; width: 100%; height: var(--small-height);
-    display: flex; align-items: center; justify-content: center;
+    flex: 0 0 auto; align-self: flex-start;
+    width: var(--cpl-ink-span); margin-left: var(--cpl-ink-start);
+    height: var(--small-height);
+    display: flex; align-items: center; justify-content: space-between;
     gap: var(--small-gap);
   }
   #logo .small-pair img {
-    flex: 1 1 0; min-width: 0; max-width: var(--small-width);
-    max-height: 100%; object-fit: contain; margin-inline: auto;
+    flex: 0 0 auto; max-width: var(--small-width); max-height: 100%;
   }
 
   /* CPL_Logo.png is black-on-white, the inverse of logo.png's white-on-dark.
