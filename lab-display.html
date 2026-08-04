@@ -10,9 +10,9 @@
   SETUP
   1. Set PLAYLIST_ID below to the "list=" value from the playlist URL.
         https://www.youtube.com/playlist?list=PLabc123...   ->  'PLabc123...'
-  2. Keep all four logos in the same folder as this file. They sit in a 2x2
-     grid: logo.png and CPL_Logo.png on top, school1.png and AccentColo.png
-     smaller beneath them.
+  2. Keep all four logos in the same folder as this file. logo.png fills the
+     left side; CPL_Logo.png is centred on the right with school1.png and
+     AccentColo.png smaller beneath it.
   3. Serve the folder over HTTP — opening the file directly with file:// breaks
      the YouTube embed:
         cd /path/to/this/folder
@@ -24,13 +24,12 @@
 <style>
   :root {
     --logo-backdrop: #231f20;   /* matches logo.png's own background */
-    --logo-gap: 4vw;            /* space between the top two logos */
-    --logo-pad: 2vh 4vw 6vh;    /* heavier bottom pad nudges the stack up a little */
-    --row-height: 58vh;         /* height of the top pair */
-    --stack-gap: 2vh;           /* pair -> school logo */
-    --wordmark-lift: 6vh;       /* how much higher the right logo rides */
-    --small-height: 18vh;       /* height of the bottom pair's cells */
-    --small-width: 28%;         /* both bottom logos render to this width */
+    --logo-gap: 4vw;            /* space between the left logo and right column */
+    --logo-pad: 5vh 4vw;        /* breathing room around the card */
+    --stack-gap: 4vh;           /* wordmark -> the two small logos */
+    --small-gap: 3vw;           /* between the two small logos */
+    --small-height: 15vh;       /* height of the small logos' row */
+    --small-width: 46%;         /* both small logos render to this width */
     --fade: 700ms;
   }
 
@@ -45,37 +44,47 @@
   /* Logo card sits above the player and fades in and out. */
   #logo {
     position: fixed; inset: 0; z-index: 10;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    gap: var(--stack-gap); padding: var(--logo-pad); box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center;
+    gap: var(--logo-gap); padding: var(--logo-pad); box-sizing: border-box;
     background: var(--logo-backdrop);
     opacity: 0; visibility: hidden;
     transition: opacity var(--fade) ease, visibility var(--fade);
   }
   #logo.visible { opacity: 1; visibility: visible; }
 
-  /* Both rows split the width in half, so all four logos share two columns
-     and the card stays symmetrical about the centre line. */
-  #logo .pair {
-    display: flex; align-items: center; justify-content: center;
-    gap: var(--logo-gap); width: 100%; height: var(--row-height);
-  }
-  #logo .pair.small { height: var(--small-height); }
-  #logo .pair img { flex: 1 1 0; min-width: 0; max-height: 100%; object-fit: contain; }
+  /* Left: the diagram alone, sized by the card's full height. It is square, so
+     width follows height and the right column takes whatever is left. */
+  #logo .diagram { flex: 0 0 auto; height: 100%; width: auto; object-fit: contain; }
 
-  /* The bottom two have very different aspect ratios (2.68 vs 5.30), so left to
-     fill their cells they'd render at wildly different sizes. Capping both to
-     one width makes them even; the auto margins keep each centred on the same
-     column as the logo above it. */
-  #logo .pair.small img { max-width: var(--small-width); margin-inline: auto; }
+  /* Right: wordmark centred in the upper row, the two small logos beneath it. */
+  #logo .right {
+    flex: 1 1 0; min-width: 0; height: 100%;
+    display: flex; flex-direction: column; align-items: center;
+    gap: var(--stack-gap);
+  }
+  #logo .right .top {
+    flex: 1 1 0; min-height: 0; width: 100%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #logo .right .top img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+  /* The two small logos have very different aspect ratios (2.68 vs 5.30), so
+     left to fill their cells they'd render at wildly different sizes. Capping
+     both to one width makes them even; auto margins centre each in its half. */
+  #logo .small-pair {
+    flex: 0 0 auto; width: 100%; height: var(--small-height);
+    display: flex; align-items: center; justify-content: center;
+    gap: var(--small-gap);
+  }
+  #logo .small-pair img {
+    flex: 1 1 0; min-width: 0; max-width: var(--small-width);
+    max-height: 100%; object-fit: contain; margin-inline: auto;
+  }
 
   /* CPL_Logo.png is black-on-white, the inverse of logo.png's white-on-dark.
      Inverting it gives white-on-black, and screen blending drops that black
      into the backdrop, so both logos sit on one seamless dark card. */
-  #logo .wordmark {
-    filter: invert(1); mix-blend-mode: screen;
-    transform: translateY(calc(-1 * var(--wordmark-lift)));
-  }
+  #logo .wordmark { filter: invert(1); mix-blend-mode: screen; }
 
   /* school1.png is black artwork on transparency, so inverting alone turns it
      white — no blend mode needed, the transparency already lets the card show.
@@ -106,13 +115,13 @@
 <div id="player"></div>
 
 <div id="logo" aria-hidden="true">
-  <div class="pair">
-    <img src="logo.png" alt="">
-    <img class="wordmark" src="CPL_Logo.png" alt="">
-  </div>
-  <div class="pair small">
-    <img class="school" src="school1.png" alt="">
-    <img class="iex" src="AccentColo.png" alt="">
+  <img class="diagram" src="logo.png" alt="">
+  <div class="right">
+    <div class="top"><img class="wordmark" src="CPL_Logo.png" alt=""></div>
+    <div class="small-pair">
+      <img class="school" src="school1.png" alt="">
+      <img class="iex" src="AccentColo.png" alt="">
+    </div>
   </div>
 </div>
 
@@ -122,7 +131,7 @@
 /* ---- Settings ------------------------------------------------------ */
 const PLAYLIST_ID   = 'PLjxddgZe17mykjPF2kbzCZFfGsw20HU1p';
 const EVERY         = 3;      // show the logo after this many videos
-const LOGO_SECONDS  = 5;      // how long it stays up
+const LOGO_SECONDS  = 10;     // how long it stays up
 const SHUFFLE       = false;  // true to shuffle the playlist
 /* ------------------------------------------------------------------- */
 
