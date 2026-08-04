@@ -24,11 +24,11 @@
   :root {
     --logo-backdrop: #231f20;   /* matches logo.png's own background */
     --logo-gap: 4vw;            /* space between the top two logos */
-    --logo-pad: 3vh 4vw 4vh;    /* top-biased, so the stack sits high */
+    --logo-pad: 2vh 4vw 6vh;    /* heavier bottom pad nudges the stack up a little */
     --row-height: 58vh;         /* height of the top pair */
-    --stack-gap: 3vh;           /* pair -> school logo */
+    --stack-gap: 2vh;           /* pair -> school logo */
     --wordmark-lift: 6vh;       /* how much higher the right logo rides */
-    --school-height: 16vh;      /* size of the school lockup below */
+    --school-height: 24vh;      /* size of the school lockup below */
     --fade: 700ms;
   }
 
@@ -44,7 +44,7 @@
   #logo {
     position: fixed; inset: 0; z-index: 10;
     display: flex; flex-direction: column;
-    align-items: center; justify-content: flex-start;
+    align-items: center; justify-content: center;
     gap: var(--stack-gap); padding: var(--logo-pad); box-sizing: border-box;
     background: var(--logo-backdrop);
     opacity: 0; visibility: hidden;
