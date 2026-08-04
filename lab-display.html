@@ -10,8 +10,8 @@
   SETUP
   1. Set PLAYLIST_ID below to the "list=" value from the playlist URL.
         https://www.youtube.com/playlist?list=PLabc123...   ->  'PLabc123...'
-  2. Keep logo.png (left) and CPL_Logo.png (right) in the same folder as this
-     file. Both are shown side by side, each filling half the width.
+  2. Keep logo.png (top left), CPL_Logo.png (top right) and school1.png
+     (centred below the pair) in the same folder as this file.
   3. Serve the folder over HTTP — opening the file directly with file:// breaks
      the YouTube embed:
         cd /path/to/this/folder
@@ -23,8 +23,12 @@
 <style>
   :root {
     --logo-backdrop: #231f20;   /* matches logo.png's own background */
-    --logo-gap: 4vw;            /* space between the two logos */
-    --logo-pad: 5vh 4vw;        /* breathing room around the pair */
+    --logo-gap: 4vw;            /* space between the top two logos */
+    --logo-pad: 3vh 4vw 4vh;    /* top-biased, so the stack sits high */
+    --row-height: 58vh;         /* height of the top pair */
+    --stack-gap: 3vh;           /* pair -> school logo */
+    --wordmark-lift: 6vh;       /* how much higher the right logo rides */
+    --school-height: 16vh;      /* size of the school lockup below */
     --fade: 700ms;
   }
 
@@ -39,21 +43,36 @@
   /* Logo card sits above the player and fades in and out. */
   #logo {
     position: fixed; inset: 0; z-index: 10;
-    display: flex; align-items: center; justify-content: center;
-    gap: var(--logo-gap); padding: var(--logo-pad); box-sizing: border-box;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start;
+    gap: var(--stack-gap); padding: var(--logo-pad); box-sizing: border-box;
     background: var(--logo-backdrop);
     opacity: 0; visibility: hidden;
     transition: opacity var(--fade) ease, visibility var(--fade);
   }
   #logo.visible { opacity: 1; visibility: visible; }
 
-  /* Each logo takes half the width; contain keeps its own aspect ratio. */
-  #logo img { flex: 1 1 0; min-width: 0; max-height: 100%; object-fit: contain; }
+  /* Top pair: each takes half the width, contain keeps its own aspect ratio. */
+  #logo .pair {
+    display: flex; align-items: center; justify-content: center;
+    gap: var(--logo-gap); width: 100%; height: var(--row-height);
+  }
+  #logo .pair img { flex: 1 1 0; min-width: 0; max-height: 100%; object-fit: contain; }
 
   /* CPL_Logo.png is black-on-white, the inverse of logo.png's white-on-dark.
      Inverting it gives white-on-black, and screen blending drops that black
      into the backdrop, so both logos sit on one seamless dark card. */
-  #logo .wordmark { filter: invert(1); mix-blend-mode: screen; }
+  #logo .wordmark {
+    filter: invert(1); mix-blend-mode: screen;
+    transform: translateY(calc(-1 * var(--wordmark-lift)));
+  }
+
+  /* school1.png is black artwork on transparency, so inverting alone turns it
+     white — no blend mode needed, the transparency already lets the card show. */
+  #logo .school {
+    height: var(--school-height); max-width: 45%;
+    object-fit: contain; filter: invert(1);
+  }
 
   /* Browsers block sound until someone interacts with the page once. */
   #start {
@@ -72,8 +91,11 @@
 <div id="player"></div>
 
 <div id="logo" aria-hidden="true">
-  <img src="logo.png" alt="">
-  <img class="wordmark" src="CPL_Logo.png" alt="">
+  <div class="pair">
+    <img src="logo.png" alt="">
+    <img class="wordmark" src="CPL_Logo.png" alt="">
+  </div>
+  <img class="school" src="school1.png" alt="">
 </div>
 
 <button id="start" type="button">Click to start the display</button>
