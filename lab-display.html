@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lab display</title>
+<!--
+  Lab display: plays a YouTube playlist on loop and covers the screen with
+  logo.png for a few seconds every N videos.
+
+  SETUP
+  1. Set PLAYLIST_ID below to the "list=" value from the playlist URL.
+        https://www.youtube.com/playlist?list=PLabc123...   ->  'PLabc123...'
+  2. Put logo.png in the same folder as this file (PNG or SVG, transparent is fine).
+  3. Serve the folder over HTTP — opening the file directly with file:// breaks
+     the YouTube embed:
+        cd /path/to/this/folder
+        python3 -m http.server 8000
+  4. Open http://localhost:8000/lab-display.html in the browser, fullscreen.
+
+  Press L at any time to trigger the logo by hand (useful while testing).
+-->
+<style>
+  :root {
+    --logo-backdrop: #231f20;   /* matches the logo's own background */
+    --logo-size: 100%;          /* logo size as a share of the screen */
+    --fade: 700ms;
+  }
+
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body { cursor: none; }
+
+  #player, #player iframe {
+    position: fixed; inset: 0;
+    width: 100vw; height: 100vh; border: 0;
+  }
+
+  /* Logo card sits above the player and fades in and out. */
+  #logo {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--logo-backdrop);
+    opacity: 0; visibility: hidden;
+    transition: opacity var(--fade) ease, visibility var(--fade);
+  }
+  #logo.visible { opacity: 1; visibility: visible; }
+  #logo img { width: var(--logo-size); height: var(--logo-size); object-fit: contain; }
+
+  /* Browsers block sound until someone interacts with the page once. */
+  #start {
+    position: fixed; inset: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: center;
+    background: #000; color: #9a9a9a; cursor: pointer;
+    font: 400 1.5rem/1.4 system-ui, sans-serif; letter-spacing: 0.02em;
+  }
+  #start:focus-visible { outline: 2px solid #9a9a9a; outline-offset: -8px; }
+
+  @media (prefers-reduced-motion: reduce) { :root { --fade: 0ms; } }
+</style>
+</head>
+<body>
+
+<div id="player"></div>
+
+<div id="logo" aria-hidden="true">
+  <img src="logo.png" alt="">
+</div>
+
+<button id="start" type="button">Click to start the display</button>
+
+<script>
+/* ---- Settings ------------------------------------------------------ */
+const PLAYLIST_ID   = 'PLjxddgZe17mykjPF2kbzCZFfGsw20HU1p';
+const EVERY         = 3;      // show the logo after this many videos
+const LOGO_SECONDS  = 10;     // how long it stays up
+const SHUFFLE       = false;  // true to shuffle the playlist
+/* ------------------------------------------------------------------- */
+
+const logoEl  = document.getElementById('logo');
+const startEl = document.getElementById('start');
+
+let player;
+let videosPlayed = 0;
+let lastIndex = null;
+let showingLogo = false;
+
+// Called by the YouTube API script once it loads.
+function onYouTubeIframeAPIReady() {
+  player = new YT.Player('player', {
+    playerVars: {
+      listType: 'playlist',
+      list: PLAYLIST_ID,
+      loop: 1,              // restart the playlist when it finishes
+      autoplay: 1,
+      controls: 0,          // hide the player chrome
+      disablekb: 1,
+      modestbranding: 1,
+      iv_load_policy: 3,    // no annotation cards
+      rel: 0,
+      fs: 0,
+      playsinline: 1
+    },
+    events: {
+      onReady: onPlayerReady,
+      // An unplayable or embed-blocked video would otherwise stall the loop.
+      onError: () => player.nextVideo()
+    }
+  });
+}
+
+function onPlayerReady() {
+  if (SHUFFLE) player.setShuffle(true);
+
+  startEl.addEventListener('click', () => {
+    startEl.remove();
+    player.playVideo();
+    setInterval(watchForVideoChange, 500);
+  });
+  startEl.focus();
+}
+
+// The playlist index tells us when the player has moved to the next video.
+function watchForVideoChange() {
+  if (showingLogo) return;
+
+  const index = player.getPlaylistIndex();
+  if (index === lastIndex) return;
+
+  if (lastIndex !== null) {           // don't count the first video's start
+    videosPlayed++;
+    if (videosPlayed >= EVERY) {
+      videosPlayed = 0;
+      showLogo();
+    }
+  }
+  lastIndex = index;
+}
+
+function showLogo() {
+  showingLogo = true;
+  player.pauseVideo();
+  logoEl.classList.add('visible');
+
+  setTimeout(() => {
+    logoEl.classList.remove('visible');
+    player.playVideo();
+    showingLogo = false;
+  }, LOGO_SECONDS * 1000);
+}
+
+// Manual trigger for testing.
+document.addEventListener('keydown', e => {
+  if (e.key.toLowerCase() === 'l' && !showingLogo && player) showLogo();
+});
+</script>
+
+<script src="https://www.youtube.com/iframe_api"></script>
+</body>
+</html>
