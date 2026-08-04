@@ -57,8 +57,13 @@
   #logo .diagram { flex: 0 0 auto; height: 100%; width: auto; object-fit: contain; }
 
   /* Right: wordmark centred in the upper row, the two small logos beneath it. */
+  /* The pad equals exactly what .small-pair plus its gap take off the bottom,
+     so .top ends up centred on the card's vertical midline — which is where
+     logo.png's horizontal quadrant line falls (measured 1203.5 of 2400, i.e.
+     under 1px off centre once rendered). That levels the wordmark with it. */
   #logo .right {
-    flex: 1 1 0; min-width: 0; height: 100%;
+    flex: 1 1 0; min-width: 0; height: 100%; box-sizing: border-box;
+    padding-top: calc(var(--small-height) + var(--stack-gap));
     display: flex; flex-direction: column; align-items: center;
     gap: var(--stack-gap);
   }
