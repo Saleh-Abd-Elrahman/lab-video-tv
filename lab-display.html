@@ -149,6 +149,19 @@ const PLAYLIST_ID   = 'PLjxddgZe17mykjPF2kbzCZFfGsw20HU1p';
 const EVERY         = 3;      // show the logo after this many videos
 const LOGO_SECONDS  = 10;     // how long it stays up
 const SHUFFLE       = false;  // true to shuffle the playlist
+
+// Videos that already have subtitles burned into the picture — YouTube's own
+// captions are switched off for these so the text doesn't appear twice. Use
+// the id from the watch URL: youtube.com/watch?v=dQw4w9WgXcQ -> 'dQw4w9WgXcQ'.
+const BURNED_IN_SUBS = [
+  // 'dQw4w9WgXcQ',
+  'TnFKP2k0vCA',
+  '5S9eMuWnhj8',
+  '91nEFo7FQDw',
+  '2KsvCRMe0O8',
+  'Hl9w9s7gV_c',
+  'Uhx3vMD4bh8',
+];
 /* ------------------------------------------------------------------- */
 
 const logoEl  = document.getElementById('logo');
@@ -177,6 +190,8 @@ function onYouTubeIframeAPIReady() {
     },
     events: {
       onReady: onPlayerReady,
+      // The captions module reloads with each video, so re-apply on every start.
+      onStateChange: e => { if (e.data === YT.PlayerState.PLAYING) applyCaptions(); },
       // An unplayable or embed-blocked video would otherwise stall the loop.
       onError: () => player.nextVideo()
     }
@@ -192,6 +207,15 @@ function onPlayerReady() {
     setInterval(watchForVideoChange, 500);
   });
   startEl.focus();
+}
+
+// Off for the videos with subtitles in the picture already, on for the rest.
+// 'captions' and 'cc' are the same module under the old and new player names;
+// whichever one this player isn't using just ignores the call.
+function applyCaptions() {
+  const id = player.getVideoData && player.getVideoData().video_id;
+  const off = BURNED_IN_SUBS.includes(id);
+  ['captions', 'cc'].forEach(m => off ? player.unloadModule(m) : player.loadModule(m));
 }
 
 // The playlist index tells us when the player has moved to the next video.
