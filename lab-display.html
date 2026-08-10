@@ -168,7 +168,6 @@ function onYouTubeIframeAPIReady() {
       list: PLAYLIST_ID,
       loop: 1,              // restart the playlist when it finishes
       autoplay: 1,
-      mute: 1,              // browsers only allow unprompted autoplay when muted
       controls: 0,          // hide the player chrome
       disablekb: 1,
       modestbranding: 1,
@@ -190,13 +189,25 @@ function onYouTubeIframeAPIReady() {
 function onPlayerReady() {
   if (SHUFFLE) player.setShuffle(true);
 
+  player.unMute();
+  player.setVolume(100);   // YouTube remembers a volume of 0 across sessions
   player.playVideo();
   setInterval(watchForVideoChange, 500);
 
-  // Muted autoplay is the price of starting on its own; the first touch or
-  // keypress turns the sound on, so nobody has to hunt for a control.
-  ['click', 'keydown'].forEach(t =>
-    document.addEventListener(t, () => player.unMute(), { once: true }));
+  // Try for sound first: a kiosk browser (or Chrome started with
+  // --autoplay-policy=no-user-gesture-required) plays unmuted straight away.
+  // Anywhere else the browser refuses, so fall back to a muted start rather
+  // than a black screen, and take the sound back on the first touch or key.
+  setTimeout(() => {
+    if (player.getPlayerState() === YT.PlayerState.PLAYING) return;
+    player.mute();
+    player.playVideo();
+    ['click', 'keydown'].forEach(t => document.addEventListener(t, () => {
+      player.unMute();
+      player.setVolume(100);
+      player.playVideo();   // unmuting can cost us the playback, take it back
+    }, { once: true }));
+  }, 2000);
 }
 
 // Off for the videos with subtitles in the picture already, on for the rest.
