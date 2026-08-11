@@ -138,6 +138,7 @@ const PLAYLIST_ID   = 'PLjxddgZe17mykjPF2kbzCZFfGsw20HU1p';
 const EVERY         = 3;      // show the logo after this many videos
 const LOGO_SECONDS  = 10;     // how long it stays up
 const SHUFFLE       = false;  // true to shuffle the playlist
+const STALL_SECONDS = 60;     // reload the page if playback stops advancing
 
 // Videos that already have subtitles burned into the picture — YouTube's own
 // captions are switched off for these so the text doesn't appear twice. Use
@@ -222,6 +223,7 @@ function applyCaptions() {
 // The playlist index tells us when the player has moved to the next video.
 function watchForVideoChange() {
   if (showingLogo) return;
+  watchForStall();
 
   const index = player.getPlaylistIndex();
   if (index === lastIndex) return;
@@ -235,6 +237,28 @@ function watchForVideoChange() {
   }
   lastIndex = index;
 }
+
+// A dropped network leaves the embed stuck on an error with no way back, so
+// treat a frozen playhead as a dead page and start over. The service worker
+// keeps that reload working while the network is still down.
+let lastTime = null;
+let lastAdvance = 0;
+
+function watchForStall() {
+  const t = player.getCurrentTime();
+  if (t !== lastTime) {
+    lastTime = t;
+    lastAdvance = Date.now();
+  } else if (Date.now() - lastAdvance > STALL_SECONDS * 1000) {
+    location.reload();
+  }
+}
+
+// The same for a drop that happens before the player exists: without the
+// YouTube API script there is no playhead to watch, only a black screen.
+setTimeout(() => { if (!player) location.reload(); }, STALL_SECONDS * 1000);
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 
 function showLogo() {
   showingLogo = true;
