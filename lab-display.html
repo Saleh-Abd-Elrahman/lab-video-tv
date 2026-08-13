@@ -47,6 +47,23 @@
     width: 100vw; height: 100vh; border: 0;
   }
 
+  /* Over the closing stretch of a video YouTube lays an end screen card — the
+     thumbnail of another video or playlist — across the upper left of the
+     picture. No player flag turns it off (rel=0 only narrows what it offers)
+     and it is drawn inside the iframe, on YouTube's own origin, so it cannot be
+     reached from this page. This patch covers where it lands, and only while it
+     is up, so the rest of every video plays untouched.
+     Position measured off the TV photo: the card runs from 3% to 38% across and
+     13% to 45% down. These bounds add a margin on every side. */
+  #mask {
+    position: fixed; left: 0; top: 8%; z-index: 5;
+    width: 42%; height: 40%;
+    background: #000;
+    opacity: 0; visibility: hidden;
+    transition: opacity var(--fade) ease, visibility var(--fade);
+  }
+  #mask.visible { opacity: 1; visibility: visible; }
+
   /* Logo card sits above the player and fades in and out. */
   #logo {
     position: fixed; inset: 0; z-index: 10;
@@ -120,6 +137,7 @@
 <body>
 
 <div id="player"></div>
+<div id="mask"></div>
 
 <div id="logo" aria-hidden="true">
   <img class="diagram" src="logo.png" alt="">
@@ -139,6 +157,7 @@ const EVERY         = 3;      // show the logo after this many videos
 const LOGO_SECONDS  = 10;     // how long it stays up
 const SHUFFLE       = false;  // true to shuffle the playlist
 const STALL_SECONDS = 60;     // reload the page if playback stops advancing
+const CARD_SECONDS  = 21;     // cover the end screen card over this closing stretch
 
 // Videos that already have subtitles burned into the picture — YouTube's own
 // captions are switched off for these so the text doesn't appear twice. Use
@@ -155,6 +174,7 @@ const BURNED_IN_SUBS = [
 /* ------------------------------------------------------------------- */
 
 const logoEl = document.getElementById('logo');
+const maskEl = document.getElementById('mask');
 
 let player;
 let videosPlayed = 0;
@@ -224,6 +244,7 @@ function applyCaptions() {
 function watchForVideoChange() {
   if (showingLogo) return;
   watchForStall();
+  maskEndScreen();
 
   const index = player.getPlaylistIndex();
   if (index === lastIndex) return;
@@ -236,6 +257,14 @@ function watchForVideoChange() {
     }
   }
   lastIndex = index;
+}
+
+// The card can show from 20 seconds before the end at the earliest, so the
+// patch goes up for that stretch and comes down with the next video.
+function maskEndScreen() {
+  const duration = player.getDuration();
+  const closing = !!duration && duration - player.getCurrentTime() < CARD_SECONDS;
+  maskEl.classList.toggle('visible', closing);
 }
 
 // A dropped network leaves the embed stuck on an error with no way back, so
