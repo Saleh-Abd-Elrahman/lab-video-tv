@@ -54,11 +54,17 @@
      reached from this page. This patch covers where it lands, and only while it
      is up, so the rest of every video plays untouched.
      Position measured off the TV photo: the card runs from 3% to 38% across and
-     13% to 45% down. These bounds add a margin on every side. */
+     13% to 45% down. These bounds add a margin on every side.
+     The patch carries the wordmark rather than being a bare black rectangle:
+     inverted to white-on-black, same as on the logo card, with padding so it
+     sits inside the panel instead of running to its edges. */
   #mask {
     position: fixed; left: 0; top: 8%; z-index: 5;
     width: 42%; height: 40%;
-    background: #000;
+    background: #fff;   /* the invert below turns this into the black panel */
+    padding: 4vh 3vw; box-sizing: border-box;
+    object-fit: contain;
+    filter: invert(1);
     opacity: 0; visibility: hidden;
     transition: opacity var(--fade) ease, visibility var(--fade);
   }
@@ -137,7 +143,7 @@
 <body>
 
 <div id="player"></div>
-<div id="mask"></div>
+<img id="mask" src="CPL_Logo.png" alt="">
 
 <div id="logo" aria-hidden="true">
   <img class="diagram" src="logo.png" alt="">
