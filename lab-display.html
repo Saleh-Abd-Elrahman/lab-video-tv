@@ -42,9 +42,20 @@
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
   body { cursor: none; }
 
+  /* YouTube picks what resolution to fetch from how many pixels the player
+     element covers, and a Pi has no hardware decoder for the codec YouTube
+     serves it — every 1080p frame is put together on the CPU. That leaves no
+     headroom at all, so anything that takes a slice of the processor later in
+     the day shows up as dropped frames. So the player is laid out at 720p and
+     the whole thing is stretched over the panel: the embed asks for a stream
+     with less than half the pixels to decode, and the GPU does the stretching
+     for nothing. Set --player-w through PLAYER_WIDTH in the script. */
   #player, #player iframe {
-    position: fixed; inset: 0;
-    width: 100vw; height: 100vh; border: 0;
+    position: fixed; left: 0; top: 0;
+    width: var(--player-w, 1280px); height: var(--player-h, 720px);
+    transform: scale(var(--player-scale, 1));
+    transform-origin: 0 0;
+    border: 0;
   }
 
   /* Logo card sits above the player and fades in and out. */
@@ -149,6 +160,8 @@ const SKIP_VIDEOS = [
 ];
 const STALL_SECONDS = 60;     // reload the page if playback stops advancing
 const RELOAD_HOURS  = 4;      // start the page over this often, behind a logo card
+const PLAYER_WIDTH  = 1280;   // resolution to ask YouTube for; 854 for 480p
+const MAX_QUALITY   = 'hd720';// asked for outright as well as by player size
 
 // Videos that already have subtitles burned into the picture — YouTube's own
 // captions are switched off for these so the text doesn't appear twice. Use
@@ -163,6 +176,17 @@ const BURNED_IN_SUBS = [
   'Uhx3vMD4bh8',
 ];
 /* ------------------------------------------------------------------- */
+
+// Lay the player out at PLAYER_WIDTH and stretch that over the whole panel.
+// A 16:9 screen comes out exact; anything else keeps the width and letterboxes.
+function sizePlayer() {
+  const style = document.documentElement.style;
+  style.setProperty('--player-w', PLAYER_WIDTH + 'px');
+  style.setProperty('--player-h', Math.round(PLAYER_WIDTH * 9 / 16) + 'px');
+  style.setProperty('--player-scale', innerWidth / PLAYER_WIDTH);
+}
+sizePlayer();
+addEventListener('resize', sizePlayer);
 
 const logoEl = document.getElementById('logo');
 
@@ -190,7 +214,14 @@ function onYouTubeIframeAPIReady() {
     events: {
       onReady: onPlayerReady,
       // The captions module reloads with each video, so re-apply on every start.
-      onStateChange: e => { if (e.data === YT.PlayerState.PLAYING && !skipListed()) { applyCaptions(); restoreSound(); } },
+      onStateChange: e => {
+        if (e.data !== YT.PlayerState.PLAYING || skipListed()) return;
+        applyCaptions();
+        restoreSound();
+        // Belt and braces with the player size above: this one is only a hint
+        // and YouTube is free to ignore it, but it costs nothing to ask.
+        player.setPlaybackQuality(MAX_QUALITY);
+      },
       // An unplayable or embed-blocked video would otherwise stall the loop.
       onError: () => player.nextVideo()
     }
