@@ -164,6 +164,7 @@ const LOGO_SECONDS  = 10;     // how long it stays up
 const SHUFFLE       = false;  // true to shuffle the playlist
 const STALL_SECONDS = 60;     // reload the page if playback stops advancing
 const CARD_SECONDS  = 21;     // cover the end screen card over this closing stretch
+const RELOAD_HOURS  = 4;      // start the page over this often, behind a logo card
 
 // Videos that already have subtitles burned into the picture — YouTube's own
 // captions are switched off for these so the text doesn't appear twice. Use
@@ -206,7 +207,7 @@ function onYouTubeIframeAPIReady() {
     events: {
       onReady: onPlayerReady,
       // The captions module reloads with each video, so re-apply on every start.
-      onStateChange: e => { if (e.data === YT.PlayerState.PLAYING) applyCaptions(); },
+      onStateChange: e => { if (e.data === YT.PlayerState.PLAYING) { applyCaptions(); restoreSound(); } },
       // An unplayable or embed-blocked video would otherwise stall the loop.
       onError: () => player.nextVideo()
     }
@@ -225,8 +226,12 @@ function onPlayerReady() {
   // --autoplay-policy=no-user-gesture-required) plays unmuted straight away.
   // Anywhere else the browser refuses, so fall back to a muted start rather
   // than a black screen, and take the sound back on the first touch or key.
+  // BUFFERING counts as started: a Pi opening a 1080p embed sits there for well
+  // over two seconds, and muting on that left the display silent for the rest of
+  // the day with nobody around to click it back.
   setTimeout(() => {
-    if (player.getPlayerState() === YT.PlayerState.PLAYING) return;
+    const state = player.getPlayerState();
+    if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) return;
     player.mute();
     player.playVideo();
     ['click', 'keydown'].forEach(t => document.addEventListener(t, () => {
@@ -234,7 +239,7 @@ function onPlayerReady() {
       player.setVolume(100);
       player.playVideo();   // unmuting can cost us the playback, take it back
     }, { once: true }));
-  }, 2000);
+  }, 15 * 1000);
 }
 
 // Off for the videos with subtitles in the picture already, on for the rest.
@@ -244,6 +249,15 @@ function applyCaptions() {
   const id = player.getVideoData && player.getVideoData().video_id;
   const off = BURNED_IN_SUBS.includes(id);
   ['captions', 'cc'].forEach(m => off ? player.unloadModule(m) : player.loadModule(m));
+}
+
+// If the fallback above muted us, don't let that stand for the rest of the day:
+// by the next video autoplay is long since granted, so ask for the sound back.
+function restoreSound() {
+  if (!player.isMuted()) return;
+  player.unMute();
+  player.setVolume(100);
+  player.playVideo();   // unmuting can cost us the playback, take it back
 }
 
 // The playlist index tells us when the player has moved to the next video.
@@ -299,6 +313,12 @@ function showLogo() {
   showingLogo = true;
   player.pauseVideo();
   logoEl.classList.add('visible');
+
+  // Swapping videos through one embed all day leaves the browser heavier every
+  // time, and on a small box that shows up as playback going choppy after a few
+  // hours. Starting the page over hands the memory back, and doing it while the
+  // card is up means the picture was already gone.
+  if (performance.now() > RELOAD_HOURS * 3600 * 1000) return location.reload();
 
   setTimeout(() => {
     logoEl.classList.remove('visible');

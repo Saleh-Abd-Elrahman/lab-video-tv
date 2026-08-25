@@ -1,0 +1,17 @@
+[Desktop Entry]
+# Kiosk fallback: HDMI stick / mini-PC drives the panel, Samsung plays dumb monitor.
+# Copy to ~/.config/autostart/lab-tv-kiosk.desktop on any Debian/Raspberry Pi OS
+# desktop session. The while loop is the whole crash recovery story.
+#
+# --autoplay-policy is the flag that buys us sound: without it Chromium refuses
+# unmuted autoplay and lab-display.html falls back to muted with no one around
+# to click.
+#
+# The leading sleep is also about sound. Autostart can hand us the session
+# before the audio server has published a sink, and Chromium only looks for
+# output devices as it starts up — miss that window and it plays to nothing for
+# as long as it runs, while every manual test afterwards works fine.
+Type=Application
+Name=Lab TV
+Exec=bash -c 'sleep 10; while :; do chromium --kiosk --app=https://lab-video-tv.vercel.app --autoplay-policy=no-user-gesture-required --noerrdialogs --disable-infobars --disable-session-crashed-bubble --disable-features=Translate --password-store=basic --check-for-update-interval=31536000; sleep 5; done'
+X-GNOME-Autostart-enabled=true
