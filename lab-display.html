@@ -47,29 +47,6 @@
     width: 100vw; height: 100vh; border: 0;
   }
 
-  /* Over the closing stretch of a video YouTube lays an end screen card — the
-     thumbnail of another video or playlist — across the upper left of the
-     picture. No player flag turns it off (rel=0 only narrows what it offers)
-     and it is drawn inside the iframe, on YouTube's own origin, so it cannot be
-     reached from this page. This patch covers where it lands, and only while it
-     is up, so the rest of every video plays untouched.
-     Position measured off the TV photo: the card runs from 3% to 38% across and
-     13% to 45% down. These bounds add a margin on every side.
-     The patch carries the wordmark rather than being a bare black rectangle:
-     inverted to white-on-black, same as on the logo card, with padding so it
-     sits inside the panel instead of running to its edges. */
-  #mask {
-    position: fixed; left: 0; top: 8%; z-index: 5;
-    width: 42%; height: 40%;
-    background: #fff;   /* the invert below turns this into the black panel */
-    padding: 4vh 3vw; box-sizing: border-box;
-    object-fit: contain;
-    filter: invert(1);
-    opacity: 0; visibility: hidden;
-    transition: opacity var(--fade) ease, visibility var(--fade);
-  }
-  #mask.visible { opacity: 1; visibility: visible; }
-
   /* Logo card sits above the player and fades in and out. */
   #logo {
     position: fixed; inset: 0; z-index: 10;
@@ -143,7 +120,6 @@
 <body>
 
 <div id="player"></div>
-<img id="mask" src="CPL_Logo.png" alt="">
 
 <div id="logo" aria-hidden="true">
   <img class="diagram" src="logo.png" alt="">
@@ -162,8 +138,16 @@ const PLAYLIST_ID   = 'PLjxddgZe17mykjPF2kbzCZFfGsw20HU1p';
 const EVERY         = 3;      // show the logo after this many videos
 const LOGO_SECONDS  = 10;     // how long it stays up
 const SHUFFLE       = false;  // true to shuffle the playlist
+// Vertical phone-shot clips sit in a thin strip between two black bars on a
+// wide panel, so these are passed over without ever going on screen. Same id as
+// BURNED_IN_SUBS below: youtube.com/watch?v=dQw4w9WgXcQ -> 'dQw4w9WgXcQ'.
+const SKIP_VIDEOS = [
+  // 'dQw4w9WgXcQ',
+  '91nEFo7FQDw',   // VictorIA Project
+  '2KsvCRMe0O8',   // Botzo Project
+  'Hl9w9s7gV_c',   // Creating the Website
+];
 const STALL_SECONDS = 60;     // reload the page if playback stops advancing
-const CARD_SECONDS  = 21;     // cover the end screen card over this closing stretch
 const RELOAD_HOURS  = 4;      // start the page over this often, behind a logo card
 
 // Videos that already have subtitles burned into the picture — YouTube's own
@@ -181,7 +165,6 @@ const BURNED_IN_SUBS = [
 /* ------------------------------------------------------------------- */
 
 const logoEl = document.getElementById('logo');
-const maskEl = document.getElementById('mask');
 
 let player;
 let videosPlayed = 0;
@@ -207,7 +190,7 @@ function onYouTubeIframeAPIReady() {
     events: {
       onReady: onPlayerReady,
       // The captions module reloads with each video, so re-apply on every start.
-      onStateChange: e => { if (e.data === YT.PlayerState.PLAYING) { applyCaptions(); restoreSound(); } },
+      onStateChange: e => { if (e.data === YT.PlayerState.PLAYING && !skipListed()) { applyCaptions(); restoreSound(); } },
       // An unplayable or embed-blocked video would otherwise stall the loop.
       onError: () => player.nextVideo()
     }
@@ -242,6 +225,22 @@ function onPlayerReady() {
   }, 15 * 1000);
 }
 
+// Move straight on from the listed clips, before anyone sees them.
+let skipsInARow = 0;
+
+function skipListed() {
+  const id = player.getVideoData && player.getVideoData().video_id;
+  if (!SKIP_VIDEOS.includes(id)) { skipsInARow = 0; return false; }
+
+  // If the list ever covers the whole playlist there is nothing to move on to,
+  // so play what we have rather than racing round the loop all night.
+  if (++skipsInARow >= (player.getPlaylist() || []).length) return false;
+
+  videosPlayed--;   // a video nobody saw shouldn't count towards the logo card
+  player.nextVideo();
+  return true;
+}
+
 // Off for the videos with subtitles in the picture already, on for the rest.
 // 'captions' and 'cc' are the same module under the old and new player names;
 // whichever one this player isn't using just ignores the call.
@@ -264,7 +263,6 @@ function restoreSound() {
 function watchForVideoChange() {
   if (showingLogo) return;
   watchForStall();
-  maskEndScreen();
 
   const index = player.getPlaylistIndex();
   if (index === lastIndex) return;
@@ -277,14 +275,6 @@ function watchForVideoChange() {
     }
   }
   lastIndex = index;
-}
-
-// The card can show from 20 seconds before the end at the earliest, so the
-// patch goes up for that stretch and comes down with the next video.
-function maskEndScreen() {
-  const duration = player.getDuration();
-  const closing = !!duration && duration - player.getCurrentTime() < CARD_SECONDS;
-  maskEl.classList.toggle('visible', closing);
 }
 
 // A dropped network leaves the embed stuck on an error with no way back, so
