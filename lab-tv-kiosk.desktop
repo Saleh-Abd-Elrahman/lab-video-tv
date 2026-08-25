@@ -6,7 +6,7 @@
 # Everything that used to be crammed onto this line — the crash recovery loop,
 # the wait for the audio server, the Chromium flags — now lives in
 # lab-tv-kiosk.sh next to it, along with the 08:00-22:00 Madrid schedule and the
-# CEC calls that put the panel to sleep overnight. Edit the hours there.
+# output power calls that put the panel to sleep overnight. Edit the hours there.
 Type=Application
 Name=Lab TV
 # Through a shell so $HOME expands: Desktop Entry files don't do ~ themselves,

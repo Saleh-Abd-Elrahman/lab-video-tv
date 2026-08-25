@@ -7,7 +7,7 @@
 # again, and nothing outside this file needs to know the schedule.
 #
 # INSTALL (on the Pi)
-#   sudo apt install v4l-utils                  # cec-ctl, to switch the panel
+#   sudo apt install wlopm || sudo apt install wlr-randr   # to sleep the panel
 #   mkdir -p ~/lab-tv
 #   cp -r lab-tv-kiosk.sh h264-only ~/lab-tv/
 #   chmod +x ~/lab-tv/lab-tv-kiosk.sh
@@ -21,6 +21,8 @@ ON_HOUR=8                 # first hour of the day the display is up
 OFF_HOUR=22               # first hour it is down
 ZONE=Europe/Madrid        # by name, not by offset, so the clocks change on their own
 POLL=30                   # seconds between checks
+
+OUTPUT=HDMI-A-1           # `wlr-randr` with no arguments lists the output names
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 EXT="$HERE/h264-only"
@@ -38,14 +40,25 @@ fi
 # afterwards works fine.
 sleep 10
 
-# Best effort: the display still works without CEC, it just can't put the panel
-# to sleep, so a missing cec-ctl is not worth failing over.
+# The panel doesn't speak CEC — a topology scan finds nothing at all on the bus
+# except this box — so it gets put to sleep by powering the Wayland output down
+# and letting the panel drop into standby on its own once the signal stops.
+#
+# This is only ever called with no browser running, so nothing has a window to
+# lose track of while the output is away. Best effort either way: without one of
+# these tools the display still keeps its hours, it just shows the panel's own
+# no-signal screen overnight instead of going dark.
+#
+# The environment is set so this works the same when run by hand over SSH, where
+# neither variable is inherited from the desktop session.
 panel() {
-  command -v cec-ctl >/dev/null || return 0
-  case "$1" in
-    on)  cec-ctl -d/dev/cec0 --playback --to 0 --image-view-on ;;
-    off) cec-ctl -d/dev/cec0 --playback --to 0 --standby ;;
-  esac >/dev/null 2>&1
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+  if command -v wlopm >/dev/null; then
+    wlopm "--$1" "$OUTPUT"
+  elif command -v wlr-randr >/dev/null; then
+    wlr-randr --output "$OUTPUT" "--$1"
+  fi >/dev/null 2>&1
 }
 
 running() { pgrep -f "user-data-dir=$PROFILE" >/dev/null; }
