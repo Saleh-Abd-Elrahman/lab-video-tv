@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Lab TV: H.264 only",
+  "version": "1.0",
+  "description": "Hides VP9 and AV1 from YouTube so it serves H.264, which this box can decode without melting.",
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "all_frames": true,
+      "run_at": "document_start",
+      "world": "MAIN",
+      "js": ["h264-only.js"]
+    }
+  ]
+}
