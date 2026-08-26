@@ -69,10 +69,20 @@ while :; do
   if [ "$hour" -ge "$ON_HOUR" ] && [ "$hour" -lt "$OFF_HOUR" ]; then
     if ! running; then
       panel on
-      # --load-extension is what keeps 1080p affordable: see h264-only/.
+      # Two halves of the same fix. --load-extension gets YouTube to send H.264
+      # (see h264-only/), and --enable-features points Chromium at the V4L2
+      # decoder that can handle it in hardware. This Pi 4 has that decoder sitting
+      # on /dev/video10 and was ignoring it, grinding every frame on one core
+      # instead. Neither half is any use without the other: the decoder does
+      # H.264 and nothing else, so it stays idle while YouTube sends VP9.
+      #
+      # To check it took, with the display up:  sudo fuser -v /dev/video10
+      # Chromium in that list means the decoder is doing the work.
       "$BROWSER" \
         --user-data-dir="$PROFILE" \
         --load-extension="$EXT" --disable-extensions-except="$EXT" \
+        --enable-features=AcceleratedVideoDecodeLinuxV4L2,AcceleratedVideoDecodeLinuxGL \
+        --ignore-gpu-blocklist \
         --kiosk --app="$URL" \
         --autoplay-policy=no-user-gesture-required \
         --noerrdialogs --disable-infobars --disable-session-crashed-bubble \
