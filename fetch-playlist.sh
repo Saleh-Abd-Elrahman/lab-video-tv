@@ -28,8 +28,14 @@ PLAYLIST_ID=PLjxddgZe17mykjPF2kbzCZFfGsw20HU1p
 HERE="$(cd "$(dirname "$0")" && pwd)"
 DIR="$HERE/videos"
 
-# Vertical phone-shot clips. On the YouTube player these were skipped at
-# playback time; here it is simpler not to have them on the disk at all.
+# Vertical phone-shot clips, removed after the run rather than filtered out of
+# it. --match-filter was the obvious way to do this and it rejected all 18
+# videos, not 3, so it's gone: deleting by id afterwards is the same mechanism
+# already used for the subtitle files below, and it can't quietly match nothing.
+#
+# The cost is that yt-dlp fetches these once before they're deleted, and records
+# them in .archive as done. Taking an id back out of this list therefore needs
+# videos/.archive deleted too, or it won't be downloaded again.
 SKIP=(
   91nEFo7FQDw   # VictorIA Project
   2KsvCRMe0O8   # Botzo Project
@@ -52,12 +58,6 @@ command -v ffmpeg >/dev/null || { echo "fetch-playlist: ffmpeg not installed —
 
 mkdir -p "$DIR"
 
-# Build "id!=aaa & id!=bbb" for the ones to leave alone.
-filter=""
-for id in "${SKIP[@]}"; do
-  filter="${filter:+$filter & }id!=$id"
-done
-
 # H.264 is not a preference here, it is the whole point. The Pi 4 has a hardware
 # decoder for H.264 and for nothing else, so a VP9 file would be decoded on the
 # processor and stutter exactly the way the YouTube embed used to. avc1 first,
@@ -66,17 +66,25 @@ done
 yt-dlp \
   --format 'bv*[vcodec^=avc1][height<=1080]+ba[acodec^=mp4a]/bv*[vcodec^=avc1][height<=1080]+ba/bv*[height<=1080]+ba/b[height<=1080]' \
   --merge-output-format mp4 \
-  --match-filter "$filter" \
   --output "$DIR/%(playlist_index)03d-%(id)s.%(ext)s" \
   --download-archive "$DIR/.archive" \
   --write-subs --sub-langs 'en.*' --convert-subs vtt \
-  --no-overwrites --ignore-errors --no-warnings \
-  "https://www.youtube.com/playlist?list=$PLAYLIST_ID"
+  --no-overwrites --ignore-errors \
+  "https://www.youtube.com/playlist?list=$PLAYLIST_ID" \
+  || echo "fetch-playlist: yt-dlp reported errors, some videos may be missing" >&2
+# --ignore-errors carries on past a video it can't fetch, but yt-dlp still exits
+# non-zero to say so, and under set -e that would kill the run before
+# playlist.js was written. Whatever did download is still worth listing.
+
+# The vertical clips go entirely, files and subtitles both.
+for id in "${SKIP[@]}"; do
+  rm -f "$DIR"/*"-$id".*
+done
 
 # Subtitles were fetched for everything, which is one pass instead of two; the
 # ones that would double up with burned-in text get dropped again here.
 for id in "${BURNED_IN_SUBS[@]}"; do
-  rm -f "$DIR"/*"-$id".*.vtt
+  rm -f "$DIR"/*"-$id"*.vtt
 done
 
 # playlist.js is generated rather than hand-kept so the page can't drift out of
