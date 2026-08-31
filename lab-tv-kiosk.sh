@@ -8,15 +8,20 @@
 #
 # INSTALL (on the Pi)
 #   sudo apt install wlopm || sudo apt install wlr-randr   # to sleep the panel
-#   mkdir -p ~/lab-tv
-#   cp -r lab-tv-kiosk.sh h264-only ~/lab-tv/
-#   chmod +x ~/lab-tv/lab-tv-kiosk.sh
-#   cp lab-tv-kiosk.desktop ~/.config/autostart/
+#   sudo apt install ffmpeg yt-dlp                         # to download the videos
+#   git clone <this repo> ~/lab-tv
+#   chmod +x ~/lab-tv/lab-tv-kiosk.sh ~/lab-tv/fetch-playlist.sh
+#   ~/lab-tv/fetch-playlist.sh                             # fills ~/lab-tv/videos
+#   cp ~/lab-tv/lab-tv-kiosk.desktop ~/.config/autostart/
 #   reboot
 
 set -u
 
-URL=https://lab-video-tv.vercel.app
+# The local player, served off this box — no network needed once the videos are
+# downloaded. Point this at https://lab-video-tv.vercel.app instead to go back to
+# streaming the playlist from YouTube; everything else here works either way.
+URL="http://localhost:8080/local-display.html"
+PORT=8080
 ON_HOUR=8                 # first hour of the day the display is up
 OFF_HOUR=22               # first hour it is down
 ZONE=Europe/Madrid        # by name, not by offset, so the clocks change on their own
@@ -62,13 +67,24 @@ panel() {
 }
 
 running() { pgrep -f "user-data-dir=$PROFILE" >/dev/null; }
+serving() { pgrep -f "http.server $PORT" >/dev/null; }
 
 while :; do
+  # local-display.html has to arrive over HTTP rather than as a file:// URL:
+  # Chromium refuses to load subtitle tracks off the filesystem. Bound to
+  # localhost so this isn't serving the folder to the network.
+  if ! serving; then
+    python3 -m http.server "$PORT" --directory "$HERE" --bind 127.0.0.1 \
+      >/dev/null 2>&1 &
+  fi
+
   hour=$(TZ="$ZONE" date +%-H)
 
   if [ "$hour" -ge "$ON_HOUR" ] && [ "$hour" -lt "$OFF_HOUR" ]; then
     if ! running; then
       panel on
+      # The extension only matches youtube.com, so it does nothing while URL
+      # points at the local player — it's kept for the streaming setup above.
       # Two halves of the same fix. --load-extension gets YouTube to send H.264
       # (see h264-only/), and --enable-features points Chromium at the V4L2
       # decoder that can handle it in hardware. This Pi 4 has that decoder sitting

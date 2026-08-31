@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lab display (local)</title>
+<link rel="stylesheet" href="display.css">
+<!--
+  Lab display, local edition. Same behaviour as lab-display.html — the playlist
+  on loop with the logo card every few videos — but playing files off the Pi
+  instead of a YouTube embed, so it needs no network once the files are there.
+
+  This drops a lot that only existed to work around the embed: no player API, no
+  end-screen to cover, no captions module to switch per video, no reload every
+  four hours to give back leaked memory, and no service worker to survive the
+  network dropping. What is left is a video element and a playlist.
+
+  SETUP
+  1. fetch-playlist.sh downloads the playlist into videos/ and writes
+     videos/playlist.js, which is the list this page reads. Run it again
+     whenever the playlist changes.
+  2. It has to be served over HTTP, not opened as a file — Chromium refuses to
+     load subtitle tracks from file:// URLs. lab-tv-kiosk.sh starts a server on
+     port 8080 for exactly this reason. By hand:
+        cd /path/to/this/folder && python3 -m http.server 8080
+     then open http://localhost:8080/local-display.html
+
+  Press L at any time to trigger the logo card by hand.
+-->
+<style>
+  /* contain rather than cover: a clip that isn't 16:9 gets bars instead of
+     having its sides cropped off. */
+  #video {
+    position: fixed; inset: 0;
+    width: 100vw; height: 100vh;
+    background: #000;
+    object-fit: contain;
+  }
+  /* Chromium draws a highlight box around the active caption cue by default at
+     some font sizes; this keeps the subtitles looking like the embed's did. */
+  #video::cue { background: rgba(0, 0, 0, .6); }
+</style>
+</head>
+<body>
+
+<video id="video" autoplay playsinline preload="auto"></video>
+
+<div id="logo" aria-hidden="true">
+  <img class="diagram" src="logo.png" alt="">
+  <div class="right">
+    <div class="top"><img class="wordmark" src="CPL_Logo.png" alt=""></div>
+    <div class="small-pair">
+      <img class="school" src="school1.png" alt="">
+      <img class="iex" src="AccentColo.png" alt="">
+    </div>
+  </div>
+</div>
+
+<script src="videos/playlist.js"></script>
+<script>
+/* ---- Settings ------------------------------------------------------ */
+const EVERY         = 3;      // show the logo after this many videos
+const LOGO_SECONDS  = 10;     // how long it stays up
+const SHUFFLE       = false;  // true to shuffle the order on every start
+const STALL_SECONDS = 20;     // give up on a video whose playhead has frozen
+const FOLDER        = 'videos/';
+/* ------------------------------------------------------------------- */
+
+// Which videos, in what order, comes from videos/playlist.js. Nothing is
+// filtered here: the ones we don't want were never downloaded, so the skip list
+// lives in fetch-playlist.sh instead of in the player.
+const PLAYLIST = window.PLAYLIST || [];
+
+const video  = document.getElementById('video');
+const logoEl = document.getElementById('logo');
+
+let order = PLAYLIST.map((_, i) => i);
+if (SHUFFLE) {
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+}
+
+let pos = -1;
+let videosPlayed = 0;
+let showingLogo = false;
+let failures = 0;      // consecutive, so one bad file doesn't look like an outage
+
+if (!PLAYLIST.length) {
+  // Nothing to play at all. Almost always means fetch-playlist.sh hasn't run
+  // yet, so sit on the logo card and try again rather than showing black.
+  logoEl.classList.add('visible');
+  setTimeout(() => location.reload(), 60 * 1000);
+} else {
+  play();
+}
+
+// Load the video at the next position and start it.
+function play() {
+  pos = (pos + 1) % order.length;
+  const item = PLAYLIST[order[pos]];
+
+  setCaptions(item.vtt);
+  video.src = FOLDER + item.file;
+
+  // Sound first. With Chromium started under --autoplay-policy this plays
+  // unmuted straight away; anywhere else the promise rejects, and a muted start
+  // beats a black screen. Every video is a fresh attempt at the sound, so a
+  // browser that refuses once doesn't leave the display silent all day.
+  video.muted = false;
+  video.volume = 1;
+  video.play().catch(() => {
+    video.muted = true;
+    video.play().catch(() => {});
+  });
+}
+
+// The embed switched YouTube's captions off for videos with subtitles already
+// burned into the picture. Here that decision is made when downloading: those
+// videos simply have no .vtt beside them, so there is nothing to attach.
+function setCaptions(vtt) {
+  video.querySelectorAll('track').forEach(t => t.remove());
+  if (!vtt) return;
+
+  const track = document.createElement('track');
+  track.kind = 'captions';
+  track.srclang = 'en';
+  track.label = 'English';
+  track.src = FOLDER + vtt;
+  video.append(track);
+  // `default` only takes effect while the media element is being parsed, so for
+  // a track added afterwards the mode has to be set by hand.
+  track.addEventListener('load', () => { track.track.mode = 'showing'; });
+}
+
+// End of a video: count it, and every EVERY of them put the card up before
+// moving on. Doing it between videos rather than pausing mid-playback means the
+// card never interrupts anything.
+video.addEventListener('ended', () => {
+  failures = 0;
+  if (++videosPlayed < EVERY) return play();
+
+  videosPlayed = 0;
+  showLogo(play);
+});
+
+// A file that won't decode, or has gone missing since the playlist was written,
+// would otherwise stop the display dead. Move on to the next one.
+video.addEventListener('error', onDead);
+
+// A frozen playhead is the other way a video can fail without ending: the file
+// is truncated, or the decoder has wedged. Watching the clock catches both.
+let lastTime = -1;
+let lastAdvance = Date.now();
+
+setInterval(() => {
+  if (showingLogo || video.paused) return;
+
+  if (video.currentTime !== lastTime) {
+    lastTime = video.currentTime;
+    lastAdvance = Date.now();
+  } else if (Date.now() - lastAdvance > STALL_SECONDS * 1000) {
+    onDead();
+  }
+}, 1000);
+
+function onDead() {
+  lastAdvance = Date.now();   // don't let the watchdog fire again mid-recovery
+
+  // If every entry in turn has failed, the problem isn't the files — the folder
+  // is missing, or unreadable, or the download is still running. Starting over
+  // picks up a playlist.js that has since been rewritten.
+  if (++failures >= order.length) {
+    failures = 0;
+    logoEl.classList.add('visible');
+    return setTimeout(() => location.reload(), 60 * 1000);
+  }
+  play();
+}
+
+function showLogo(done) {
+  showingLogo = true;
+  video.pause();
+  logoEl.classList.add('visible');
+
+  setTimeout(() => {
+    logoEl.classList.remove('visible');
+    showingLogo = false;
+    if (done) done();
+  }, LOGO_SECONDS * 1000);
+}
+
+// Manual trigger for testing. Resumes rather than advancing, so it can be used
+// mid-video without losing your place.
+document.addEventListener('keydown', e => {
+  if (e.key.toLowerCase() === 'l' && !showingLogo) {
+    showLogo(() => video.play().catch(() => {}));
+  }
+});
+</script>
+</body>
+</html>
