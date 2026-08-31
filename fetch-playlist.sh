@@ -7,13 +7,19 @@
 #   sudo apt install -y ffmpeg          # yt-dlp needs it to mux video with audio
 #   sudo apt install -y yt-dlp
 #
-# yt-dlp goes stale badly — YouTube changes something and an old build simply
-# stops working. If the version in apt starts failing, replace it with the
-# current release and re-run:
+# yt-dlp goes stale badly — YouTube changes the shape of a page and an old build
+# simply stops seeing anything. The tell is a run that reports
+#     Playlist ...: Downloading 0 items of 18
+# usually with a warning about an unsupported "lockup view model" just above it.
+# That is not a filter problem in this script, it is the build being too old.
+# The version in apt was already too old the first time this was run. Replace it
+# with the current release from the project's own downloads and run again:
 #   sudo apt remove -y yt-dlp
-#   mkdir -p ~/.local/bin
-#   curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
-#        -o ~/.local/bin/yt-dlp && chmod +x ~/.local/bin/yt-dlp
+#   sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
+#        -o /usr/local/bin/yt-dlp
+#   sudo chmod a+rx /usr/local/bin/yt-dlp
+# /usr/local/bin rather than ~/.local/bin so it is found from a non-login shell
+# too, in case this ever gets run from cron rather than by hand.
 #
 # USAGE
 #   ./fetch-playlist.sh
