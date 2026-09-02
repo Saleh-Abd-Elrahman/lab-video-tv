@@ -27,6 +27,13 @@
 # Videos dropped from the playlist upstream are left on disk but won't appear in
 # playlist.js, so they stop being shown. Delete videos/ entirely and re-run for a
 # clean slate.
+#
+# BACKFILLING SUBTITLES
+# The archive is per-video, not per-file, so a video that is already in it is
+# skipped whole and no subtitle file appears for it however the flags change.
+# To pick subtitles up for videos already on the disk:
+#   rm videos/.archive && ./fetch-playlist.sh
+# The .mp4 files are kept (--no-overwrites), so this only costs the subtitles.
 
 set -euo pipefail
 
@@ -74,7 +81,7 @@ yt-dlp \
   --merge-output-format mp4 \
   --output "$DIR/%(playlist_index)03d-%(id)s.%(ext)s" \
   --download-archive "$DIR/.archive" \
-  --write-subs --sub-langs 'en.*' --convert-subs vtt \
+  --write-subs --write-auto-subs --sub-langs 'en.*' --convert-subs vtt \
   --no-overwrites --ignore-errors \
   "https://www.youtube.com/playlist?list=$PLAYLIST_ID" \
   || echo "fetch-playlist: yt-dlp reported errors, some videos may be missing" >&2

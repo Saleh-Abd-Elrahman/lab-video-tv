@@ -129,8 +129,10 @@ function setCaptions(vtt) {
   track.src = FOLDER + vtt;
   video.append(track);
   // `default` only takes effect while the media element is being parsed, so for
-  // a track added afterwards the mode has to be set by hand.
-  track.addEventListener('load', () => { track.track.mode = 'showing'; });
+  // a track added afterwards the mode has to be set by hand — and it has to be
+  // set now, not on the track's load event. Chromium doesn't fetch a track that
+  // is still disabled, so waiting for load to arrive waits forever.
+  track.track.mode = 'showing';
 }
 
 // End of a video: count it, and every EVERY of them put the card up before
