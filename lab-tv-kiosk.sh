@@ -86,13 +86,35 @@ panel_state() {
   wlopm 2>/dev/null | awk -v o="$OUTPUT" '$1 == o { print $2 }'
 }
 
+# The kernel's side of the story: whether HDMI came loose while the display
+# slept, which is the one thing our own logging cannot see. It goes to disk as
+# it appears rather than being read on demand, because the ring buffer it comes
+# from does not survive the power cycle that people reach for when the display
+# is dark, and neither does the journal on this box.
+kernel_lines() {
+  local n
+  n=$(dmesg 2>/dev/null | wc -l) || return 0
+  # A wrapped ring buffer gets read from the start again: what fell off is gone
+  # either way, and repeating what is still there beats losing the rest.
+  [ "$n" -lt "$dmesg_seen" ] && dmesg_seen=0
+  if [ "$n" -gt "$dmesg_seen" ]; then
+    dmesg 2>/dev/null | tail -n +$((dmesg_seen + 1)) |
+      grep -iE 'hdmi|vc4|drm' |
+      while IFS= read -r line; do log "kernel: $line"; done
+    dmesg_seen=$n
+  fi
+}
+
 running() { pgrep -f "user-data-dir=$PROFILE" >/dev/null; }
 serving() { pgrep -f "http.server $PORT" >/dev/null; }
 
 log "supervisor started (display hours ${ON_HOUR}-${OFF_HOUR} $ZONE)"
 last_state=
+dmesg_seen=$(dmesg 2>/dev/null | wc -l)
 
 while :; do
+  kernel_lines
+
   # local-display.html has to arrive over HTTP rather than as a file:// URL:
   # Chromium refuses to load subtitle tracks off the filesystem. Bound to
   # localhost so this isn't serving the folder to the network.
