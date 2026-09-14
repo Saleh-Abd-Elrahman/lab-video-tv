@@ -10,8 +10,9 @@
 #   sudo apt install wlopm || sudo apt install wlr-randr   # to sleep the panel
 #   sudo apt install ffmpeg yt-dlp                         # to download the videos
 #   git clone <this repo> ~/lab-tv
-#   chmod +x ~/lab-tv/lab-tv-kiosk.sh ~/lab-tv/fetch-playlist.sh
+#   chmod +x ~/lab-tv/*.sh
 #   ~/lab-tv/fetch-playlist.sh                             # fills ~/lab-tv/videos
+#   ~/lab-tv/hide-cursor.sh                                # hides the mouse pointer
 #   cp ~/lab-tv/lab-tv-kiosk.desktop ~/.config/autostart/
 #   reboot
 
