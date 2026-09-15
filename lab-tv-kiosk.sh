@@ -34,6 +34,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 EXT="$HERE/h264-only"
 PROFILE="$HOME/.config/labtv-kiosk"   # also how we recognise our own Chromium
 LOG="$HERE/kiosk.log"
+BROWSER_LOG="$HERE/chromium.log"    # last launch only, whether it lived or not
 BROWSER="$(command -v chromium || command -v chromium-browser)"
 
 if [ -z "$BROWSER" ]; then
@@ -154,7 +155,15 @@ while :; do
       #
       # To check it took, with the display up:  sudo fuser -v /dev/video10
       # Chromium in that list means the decoder is doing the work.
+      # --ozone-platform is not optional here even though Chromium usually works
+      # it out: it only does so from a full desktop session's environment, and a
+      # supervisor started over SSH, or by anything that does not set
+      # XDG_SESSION_TYPE, does not have one. Without the flag Chromium picks X11,
+      # finds no X server, and exits before it has drawn anything — which looks
+      # from the sofa exactly like a dead display, and is not something the
+      # panel's own state can tell you.
       "$BROWSER" \
+        --ozone-platform=wayland \
         --user-data-dir="$PROFILE" \
         --load-extension="$EXT" --disable-extensions-except="$EXT" \
         --enable-features=AcceleratedVideoDecodeLinuxV4L2,AcceleratedVideoDecodeLinuxGL \
@@ -163,7 +172,13 @@ while :; do
         --autoplay-policy=no-user-gesture-required \
         --noerrdialogs --disable-infobars --disable-session-crashed-bubble \
         --disable-features=Translate --password-store=basic \
-        --check-for-update-interval=31536000 &
+        --check-for-update-interval=31536000 > "$BROWSER_LOG" 2>&1 &
+
+      # A browser that refuses to start says why on the way out, and this is the
+      # only chance to catch it: without this the log fills with hundreds of
+      # identical "starting the browser" lines and not one word of the reason.
+      sleep 5
+      running || log "browser exited immediately -- $(tail -2 "$BROWSER_LOG" | tr '\n' ' ' | tail -c 300)"
     fi
   elif running; then
     # Only on the pass where it was still up, so a panel someone switches back
