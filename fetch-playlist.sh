@@ -21,6 +21,12 @@
 # /usr/local/bin rather than ~/.local/bin so it is found from a non-login shell
 # too, in case this ever gets run from cron rather than by hand.
 #
+# Since late 2026 yt-dlp also needs a JavaScript runtime (deno) for YouTube.
+# Without one, new videos fail with "This video is not available" even though
+# they are public — that is what stopped two uploads on 2026-11-03:
+#   curl -L -o /tmp/deno.zip https://github.com/denoland/deno/releases/latest/download/deno-aarch64-unknown-linux-gnu.zip
+#   sudo python3 -m zipfile -e /tmp/deno.zip /usr/local/bin && sudo chmod a+rx /usr/local/bin/deno
+#
 # USAGE
 #   ./fetch-playlist.sh
 #
@@ -67,6 +73,7 @@ BURNED_IN_SUBS=(
 )
 
 command -v yt-dlp >/dev/null || { echo "fetch-playlist: yt-dlp not installed — see the notes at the top of this file" >&2; exit 1; }
+command -v deno >/dev/null || echo "fetch-playlist: no deno — new videos will likely fail as 'not available', see the notes at the top of this file" >&2
 command -v ffmpeg >/dev/null || { echo "fetch-playlist: ffmpeg not installed — yt-dlp can't mux without it" >&2; exit 1; }
 
 mkdir -p "$DIR"
