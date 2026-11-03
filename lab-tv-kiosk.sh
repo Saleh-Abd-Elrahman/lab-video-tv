@@ -110,7 +110,7 @@ running() { pgrep -f "user-data-dir=$PROFILE" >/dev/null; }
 serving() { pgrep -f "http.server $PORT" >/dev/null; }
 
 log "supervisor started (display hours ${ON_HOUR}-${OFF_HOUR} $ZONE)"
-last_state=
+last_state=init   # never a real state, so the first pass always logs
 dmesg_seen=$(dmesg 2>/dev/null | wc -l)
 
 while :; do
@@ -137,6 +137,14 @@ while :; do
     state=$(panel_state)
     if [ "$state" != "$last_state" ]; then
       log "output is ${state:-missing} (browser up: $(running && echo yes || echo no))"
+      # An output that drops off and comes back under a running Chromium leaves
+      # it painting nothing: the panel shows plain white until the browser is
+      # restarted (2026-11-03). Killing it here lets the check below relaunch.
+      if [ "$state" = on ] && [ "$last_state" != init ] && running; then
+        log "output came back, restarting the browser so it repaints"
+        pkill -f "user-data-dir=$PROFILE"
+        sleep 2
+      fi
       last_state=$state
     fi
     [ "$state" = off ] && panel on
