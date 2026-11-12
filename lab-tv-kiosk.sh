@@ -133,7 +133,11 @@ while :; do
     # back on, and the only way out was pulling the Pi's power. So during opening
     # hours the output being off is simply corrected, whatever put it there.
     # "missing" here is the interesting one: the compositor has stopped listing
-    # the output, which powering it on cannot fix and a reboot can.
+    # the output, which powering it on cannot fix and a reboot can. The Samsung
+    # drops hotplug in standby, which did exactly that 9-12 Nov 2026: dark for
+    # four days. Prevented by forcing the connector on in the kernel command line:
+    #   sudo sed -i.bak '1 s/$/ video=HDMI-A-1:3840x2160@30D/' /boot/firmware/cmdline.txt
+    # then reboot. Re-apply that after any fresh OS install.
     state=$(panel_state)
     if [ "$state" != "$last_state" ]; then
       log "output is ${state:-missing} (browser up: $(running && echo yes || echo no))"
