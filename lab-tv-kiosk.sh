@@ -4,7 +4,11 @@
 # Holds the display up between ON_HOUR and OFF_HOUR Madrid time and leaves the
 # panel asleep the rest of the day. It is also the whole crash recovery story:
 # if Chromium dies during opening hours the next pass round the loop starts it
-# again, and nothing outside this file needs to know the schedule.
+# again, and nothing outside this file needs to know the schedule. A Chromium
+# that is up but whose page never loaded (plain white, 2026-11-20) is caught by
+# a heartbeat: the page requests playlist.js?hb=... every minute, http.server
+# logs it to http.log, and silence past HB_GRACE + HB_STALE gets the browser
+# restarted, at most HB_MAX_RESTARTS times an hour.
 #
 # INSTALL (on the Pi)
 #   sudo apt install wlopm || sudo apt install wlr-randr   # to sleep the panel
@@ -28,6 +32,16 @@ OFF_HOUR=22               # first hour it is down
 ZONE=Europe/Madrid        # by name, not by offset, so the clocks change on their own
 POLL=30                   # seconds between checks
 
+# Heartbeat watchdog, all in seconds. The page checks in once a minute.
+HB_STALE=300              # this long without a heartbeat and the page is dead
+HB_GRACE=180              # after every Chromium start, before HB_STALE counts.
+                          # A cold start right after boot took 51 s to its first
+                          # renderer on 2026-11-20; 3 min is that with room to spare.
+HB_MAX_RESTARTS=3         # heartbeat restarts allowed per HB_WINDOW, then it
+HB_WINDOW=3600            # logs loudly and leaves the browser alone until one ages out
+HTTP_LOG_MAX=262144       # bytes; past this http.log is cut to its last
+HTTP_LOG_KEEP=500         # this many lines (a day of heartbeats is ~100 KB)
+
 OUTPUT=HDMI-A-1           # `wlr-randr` with no arguments lists the output names
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -35,6 +49,7 @@ EXT="$HERE/h264-only"
 PROFILE="$HOME/.config/labtv-kiosk"   # also how we recognise our own Chromium
 LOG="$HERE/kiosk.log"
 BROWSER_LOG="$HERE/chromium.log"    # last launch only, whether it lived or not
+HTTP_LOG="$HERE/http.log"           # http.server's request log, heartbeats included
 BROWSER="$(command -v chromium || command -v chromium-browser)"
 
 if [ -z "$BROWSER" ]; then
@@ -109,19 +124,90 @@ kernel_lines() {
 running() { pgrep -f "user-data-dir=$PROFILE" >/dev/null; }
 serving() { pgrep -f "http.server $PORT" >/dev/null; }
 
+# Seconds on a clock that only goes forward. The Pi has no RTC, so the wall
+# clock can jump minutes when NTP first syncs after boot, which would read as a
+# stale heartbeat. /proc/uptime doesn't jump; date is only the fallback off Linux.
+now() {
+  local up
+  if [ -r /proc/uptime ]; then read -r up _ < /proc/uptime; echo "${up%.*}"
+  else date +%s; fi
+}
+
+heartbeats() {
+  local n
+  n=$(grep -cF '?hb=' "$HTTP_LOG" 2>/dev/null)
+  echo "${n:-0}"
+}
+
+# Kept bounded here rather than by logrotate (no root). Rewritten in place, not
+# replaced: http.server holds it open for appending and carries on at the new end.
+trim_http_log() {
+  local kept
+  [ -f "$HTTP_LOG" ] || return 0
+  [ $(( $(wc -c < "$HTTP_LOG") )) -gt "$HTTP_LOG_MAX" ] || return 0
+  kept=$(tail -n "$HTTP_LOG_KEEP" "$HTTP_LOG")
+  printf '%s\n' "$kept" > "$HTTP_LOG"
+  hb_seen=$(heartbeats)   # counting starts again from what was kept
+}
+
+# Called each pass while the browser is up in opening hours. Restarts it the
+# same way a person would when the page has gone quiet, but never more than
+# HB_MAX_RESTARTS times in HB_WINDOW: a page that dies again straight after each
+# restart has a cause a restart won't fix, and looping on it helps nobody.
+heartbeat_check() {
+  local t n r recent="" count=0
+  t=$(now)
+  n=$(heartbeats)
+  [ "$n" -gt "$hb_seen" ] && hb_last=$t
+  hb_seen=$n
+
+  for r in $hb_restarts; do
+    [ $((t - r)) -lt "$HB_WINDOW" ] && { recent="$recent $r"; count=$((count + 1)); }
+  done
+  hb_restarts=$recent
+  if [ "$hb_capped" = yes ] && [ "$count" -lt "$HB_MAX_RESTARTS" ]; then
+    log "heartbeat watchdog: back under $HB_MAX_RESTARTS restarts an hour, restarting again if needed"
+    hb_capped=no
+  fi
+
+  [ $((t - hb_last)) -gt "$HB_STALE" ] || return 0
+
+  if [ "$count" -ge "$HB_MAX_RESTARTS" ]; then
+    if [ "$hb_capped" = no ]; then
+      log "!!! HEARTBEAT WATCHDOG GAVE UP: no heartbeat for $((t - hb_last))s after $count restarts in the last $((HB_WINDOW / 60)) min. Leaving the browser alone until one ages out. See chromium.log and http.log."
+      hb_capped=yes
+    fi
+    return 0
+  fi
+
+  log "no heartbeat from the page for $((t - hb_last))s, restarting the browser ($((count + 1)) of $HB_MAX_RESTARTS this hour)"
+  hb_restarts="$hb_restarts $t"
+  pkill -f "user-data-dir=$PROFILE"
+  sleep 2
+}
+
 log "supervisor started (display hours ${ON_HOUR}-${OFF_HOUR} $ZONE)"
 last_state=init   # never a real state, so the first pass always logs
 dmesg_seen=$(dmesg 2>/dev/null | wc -l)
 
+# A server left over from an earlier supervisor would be logging to /dev/null,
+# and the watchdog would hear no heartbeats from it at all. Start our own.
+pkill -f "http.server $PORT"
+hb_seen=$(heartbeats)
+hb_last=$(( $(now) + HB_GRACE ))   # a browser already up when we start gets the grace too
+hb_restarts=""
+hb_capped=no
+
 while :; do
   kernel_lines
+  trim_http_log
 
   # local-display.html has to arrive over HTTP rather than as a file:// URL:
   # Chromium refuses to load subtitle tracks off the filesystem. Bound to
   # localhost so this isn't serving the folder to the network.
   if ! serving; then
     python3 -m http.server "$PORT" --directory "$HERE" --bind 127.0.0.1 \
-      >/dev/null 2>&1 &
+      >/dev/null 2>>"$HTTP_LOG" &
   fi
 
   hour=$(TZ="$ZONE" date +%-H)
@@ -152,6 +238,8 @@ while :; do
       last_state=$state
     fi
     [ "$state" = off ] && panel on
+
+    running && heartbeat_check
 
     if ! running; then
       log "starting the browser"
@@ -185,6 +273,7 @@ while :; do
         --noerrdialogs --disable-infobars --disable-session-crashed-bubble \
         --disable-features=Translate --password-store=basic \
         --check-for-update-interval=31536000 > "$BROWSER_LOG" 2>&1 &
+      hb_last=$(( $(now) + HB_GRACE ))   # HB_STALE counts from the end of the grace
 
       # A browser that refuses to start says why on the way out, and this is the
       # only chance to catch it: without this the log fills with hundreds of
