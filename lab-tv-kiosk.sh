@@ -4,7 +4,12 @@
 # Holds the display up between ON_HOUR and OFF_HOUR Madrid time and leaves the
 # panel asleep the rest of the day. It is also the whole crash recovery story:
 # if Chromium dies during opening hours the next pass round the loop starts it
-# again, and nothing outside this file needs to know the schedule.
+# again, and nothing outside this file needs to know the schedule. A Chromium
+# that is up but whose page never loaded (plain white, 2026-11-20) is caught by
+# a heartbeat: the page requests playlist.js?hb=... every minute, the server
+# logs it to http.log, and silence past HB_GRACE + HB_STALE gets the browser
+# restarted, at most HB_MAX_RESTARTS times an hour. With HB_ENFORCE=0 it only
+# logs what it would have done.
 #
 # INSTALL (on the Pi)
 #   sudo apt install wlopm || sudo apt install wlr-randr   # to sleep the panel
@@ -28,6 +33,17 @@ OFF_HOUR=22               # first hour it is down
 ZONE=Europe/Madrid        # by name, not by offset, so the clocks change on their own
 POLL=30                   # seconds between checks
 
+# Heartbeat watchdog, all in seconds. The page checks in once a minute.
+HB_ENFORCE=0              # 0: only log "would restart". 1: actually restart.
+HB_STALE=300              # this long without a heartbeat and the page is dead
+HB_GRACE=180              # after every Chromium start, before HB_STALE counts.
+                          # A cold start right after boot took 51 s to its first
+                          # renderer on 2026-11-20; 3 min is that with room to spare.
+HB_MAX_RESTARTS=3         # heartbeat restarts allowed per HB_WINDOW, then it
+HB_WINDOW=3600            # logs loudly and leaves the browser alone until one ages out
+HTTP_LOG_MAX=262144       # bytes; past this http.log is cut to its last
+HTTP_LOG_KEEP=500         # this many lines (a day of heartbeats is ~100 KB)
+
 OUTPUT=HDMI-A-1           # `wlr-randr` with no arguments lists the output names
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -35,6 +51,7 @@ EXT="$HERE/h264-only"
 PROFILE="$HOME/.config/labtv-kiosk"   # also how we recognise our own Chromium
 LOG="$HERE/kiosk.log"
 BROWSER_LOG="$HERE/chromium.log"    # last launch only, whether it lived or not
+HTTP_LOG="$HERE/http.log"           # the server's request log, heartbeats included
 BROWSER="$(command -v chromium || command -v chromium-browser)"
 
 if [ -z "$BROWSER" ]; then
@@ -107,21 +124,167 @@ kernel_lines() {
 }
 
 running() { pgrep -f "user-data-dir=$PROFILE" >/dev/null; }
-serving() { pgrep -f "http.server $PORT" >/dev/null; }
+serving() { pgrep -f "lab-tv-http $PORT" >/dev/null; }
+
+# The folder's web server: Python's http.server plus two things it lacks.
+# Cache-Control: no-cache, because without it Chromium judged a file unchanged
+# for weeks to be fresh and kept serving its own copy of local-display.html
+# without asking (2026-11-20: a deployed page edit never reached the screen).
+# Every load now revalidates, which costs a 304 when nothing changed. And
+# single byte ranges (206), which it ignores, sending the whole file to a
+# seek instead. Requests are logged to stderr, which goes to http.log.
+SERVER_PY=$(cat <<'EOF'
+import functools, http.server, os, sys
+
+class Handler(http.server.SimpleHTTPRequestHandler):
+    left = None   # bytes still to send for a range response
+
+    def end_headers(self):
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Accept-Ranges', 'bytes')
+        super().end_headers()
+
+    def send_head(self):
+        rng = self.headers.get('Range', '')
+        path = self.translate_path(self.path)
+        if not rng.startswith('bytes=') or ',' in rng or not os.path.isfile(path):
+            return super().send_head()
+        size = os.path.getsize(path)
+        first, _, last = rng[6:].partition('-')
+        try:
+            if first:
+                start, end = int(first), min(int(last) if last else size - 1, size - 1)
+            else:
+                start, end = max(size - int(last), 0), size - 1
+        except ValueError:
+            return super().send_head()
+        if start > end:
+            self.send_response(416)
+            self.send_header('Content-Range', f'bytes */{size}')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return None
+        f = open(path, 'rb')
+        f.seek(start)
+        self.send_response(206)
+        self.send_header('Content-Type', self.guess_type(path))
+        self.send_header('Content-Range', f'bytes {start}-{end}/{size}')
+        self.send_header('Content-Length', str(end - start + 1))
+        self.send_header('Last-Modified', self.date_time_string(int(os.path.getmtime(path))))
+        self.end_headers()
+        self.left = end - start + 1
+        return f
+
+    def copyfile(self, src, dst):
+        if self.left is None:
+            return super().copyfile(src, dst)
+        left, self.left = self.left, None
+        while left > 0:
+            buf = src.read(min(64 * 1024, left))
+            if not buf:
+                break
+            dst.write(buf)
+            left -= len(buf)
+
+port, folder = int(sys.argv[2]), sys.argv[3]
+http.server.ThreadingHTTPServer(
+    ('127.0.0.1', port), functools.partial(Handler, directory=folder)).serve_forever()
+EOF
+)
+
+# Seconds on a clock that only goes forward. The Pi has no RTC, so the wall
+# clock can jump minutes when NTP first syncs after boot, which would read as a
+# stale heartbeat. /proc/uptime doesn't jump; date is only the fallback off Linux.
+now() {
+  local up
+  if [ -r /proc/uptime ]; then read -r up _ < /proc/uptime; echo "${up%.*}"
+  else date +%s; fi
+}
+
+heartbeats() {
+  local n
+  n=$(grep -cF '?hb=' "$HTTP_LOG" 2>/dev/null)
+  echo "${n:-0}"
+}
+
+# Kept bounded here rather than by logrotate (no root). Rewritten in place, not
+# replaced: http.server holds it open for appending and carries on at the new end.
+trim_http_log() {
+  local kept
+  [ -f "$HTTP_LOG" ] || return 0
+  [ $(( $(wc -c < "$HTTP_LOG") )) -gt "$HTTP_LOG_MAX" ] || return 0
+  kept=$(tail -n "$HTTP_LOG_KEEP" "$HTTP_LOG")
+  printf '%s\n' "$kept" > "$HTTP_LOG"
+  hb_seen=$(heartbeats)   # counting starts again from what was kept
+}
+
+# Called each pass while the browser is up in opening hours. Restarts it the
+# same way a person would when the page has gone quiet, but never more than
+# HB_MAX_RESTARTS times in HB_WINDOW: a page that dies again straight after each
+# restart has a cause a restart won't fix, and looping on it helps nobody.
+heartbeat_check() {
+  local t n r recent="" count=0 mode=""
+  [ "$HB_ENFORCE" = 1 ] || mode=" (log-only)"
+  t=$(now)
+  n=$(heartbeats)
+  [ "$n" -gt "$hb_seen" ] && hb_last=$t
+  hb_seen=$n
+
+  for r in $hb_restarts; do
+    [ $((t - r)) -lt "$HB_WINDOW" ] && { recent="$recent $r"; count=$((count + 1)); }
+  done
+  hb_restarts=$recent
+  if [ "$hb_capped" = yes ] && [ "$count" -lt "$HB_MAX_RESTARTS" ]; then
+    log "heartbeat watchdog$mode: back under $HB_MAX_RESTARTS restarts an hour, restarting again if needed"
+    hb_capped=no
+  fi
+
+  [ $((t - hb_last)) -gt "$HB_STALE" ] || return 0
+
+  if [ "$count" -ge "$HB_MAX_RESTARTS" ]; then
+    if [ "$hb_capped" = no ]; then
+      log "!!! HEARTBEAT WATCHDOG$mode GAVE UP: no heartbeat for $((t - hb_last))s after $count restarts in the last $((HB_WINDOW / 60)) min. Leaving the browser alone until one ages out. See chromium.log and http.log."
+      hb_capped=yes
+    fi
+    return 0
+  fi
+
+  hb_restarts="$hb_restarts $t"
+  if [ "$HB_ENFORCE" = 1 ]; then
+    log "no heartbeat from the page for $((t - hb_last))s, restarting the browser ($((count + 1)) of $HB_MAX_RESTARTS this hour)"
+    pkill -f "user-data-dir=$PROFILE"
+    sleep 2
+  else
+    # Counted, capped and timed exactly like a real restart, grace included, so a
+    # day of log-only lines is what enforce mode would have done.
+    log "heartbeat watchdog (log-only): would restart the browser, no heartbeat for $((t - hb_last))s ($((count + 1)) of $HB_MAX_RESTARTS this hour)"
+    hb_last=$(( t + HB_GRACE ))
+  fi
+}
 
 log "supervisor started (display hours ${ON_HOUR}-${OFF_HOUR} $ZONE)"
 last_state=init   # never a real state, so the first pass always logs
 dmesg_seen=$(dmesg 2>/dev/null | wc -l)
 
+# A server left over from an earlier supervisor may be the old plain
+# http.server logging to /dev/null, which caches badly and from which the
+# watchdog would hear no heartbeats at all. Start our own.
+pkill -f "http.server $PORT"
+pkill -f "lab-tv-http $PORT"
+hb_seen=$(heartbeats)
+hb_last=$(( $(now) + HB_GRACE ))   # a browser already up when we start gets the grace too
+hb_restarts=""
+hb_capped=no
+
 while :; do
   kernel_lines
+  trim_http_log
 
   # local-display.html has to arrive over HTTP rather than as a file:// URL:
   # Chromium refuses to load subtitle tracks off the filesystem. Bound to
   # localhost so this isn't serving the folder to the network.
   if ! serving; then
-    python3 -m http.server "$PORT" --directory "$HERE" --bind 127.0.0.1 \
-      >/dev/null 2>&1 &
+    python3 -c "$SERVER_PY" lab-tv-http "$PORT" "$HERE" >/dev/null 2>>"$HTTP_LOG" &
   fi
 
   hour=$(TZ="$ZONE" date +%-H)
@@ -152,6 +315,8 @@ while :; do
       last_state=$state
     fi
     [ "$state" = off ] && panel on
+
+    running && heartbeat_check
 
     if ! running; then
       log "starting the browser"
@@ -185,6 +350,7 @@ while :; do
         --noerrdialogs --disable-infobars --disable-session-crashed-bubble \
         --disable-features=Translate --password-store=basic \
         --check-for-update-interval=31536000 > "$BROWSER_LOG" 2>&1 &
+      hb_last=$(( $(now) + HB_GRACE ))   # HB_STALE counts from the end of the grace
 
       # A browser that refuses to start says why on the way out, and this is the
       # only chance to catch it: without this the log fills with hundreds of

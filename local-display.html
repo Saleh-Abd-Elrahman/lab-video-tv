@@ -70,6 +70,16 @@ const FOLDER        = 'videos/';
 // lives in fetch-playlist.sh instead of in the player.
 const PLAYLIST = window.PLAYLIST || [];
 
+// Heartbeat for lab-tv-kiosk.sh, which restarts the browser when these stop
+// arriving: a page that never loaded shows plain white all day while Chromium
+// itself looks perfectly healthy (2026-11-20). The query and no-store keep a
+// cached response from standing in for a live page.
+const heartbeat = () =>
+  fetch(FOLDER + 'playlist.js?hb=' + Date.now(), { method: 'HEAD', cache: 'no-store' })
+    .catch(() => {});
+heartbeat();
+setInterval(heartbeat, 60 * 1000);
+
 const video  = document.getElementById('video');
 const logoEl = document.getElementById('logo');
 

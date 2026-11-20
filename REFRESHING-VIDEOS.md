@@ -217,6 +217,53 @@ fails: the card stays up and the page reloads every 60 seconds, so it recovers
 on its own once the files are there. It is not a crash. Check that
 `videos/*.mp4` exist and that the download finished.
 
+### The display is plain white
+
+Chromium is up but its page never loaded (2026-11-20: after a power cut, its
+network service crashed mid-load). The supervisor watches for this: the page
+sends a heartbeat (`HEAD videos/playlist.js?hb=...`) every minute, and if none
+arrives for 5 minutes (counted from 3 minutes after each browser start) the page
+is taken to be dead. It acts on that at most 3 times an hour.
+
+The watchdog has two modes, set by `HB_ENFORCE` at the top of
+`lab-tv-kiosk.sh`:
+
+- **`HB_ENFORCE=0` (log-only, the current setting):** it never restarts
+  anything. It only writes
+  `heartbeat watchdog (log-only): would restart the browser ...` to `kiosk.log`,
+  counting and capping exactly as enforce mode would. If those lines appear
+  while the screen is fine, the watchdog is wrong, not the page.
+- **`HB_ENFORCE=1`:** it restarts Chromium and logs
+  `no heartbeat from the page ..., restarting the browser`.
+
+In both modes, `HEARTBEAT WATCHDOG GAVE UP` means 3 restarts in an hour didn't
+help and something else is wrong. To switch to enforce mode, change that one
+line, commit, pull on the Pi and restart the supervisor. The heartbeats
+themselves are in `http.log`:
+
+```bash
+grep -F '?hb=' http.log | tail -3
+```
+
+To recover by hand, restart the browser the usual way (step 4).
+
+### An edit to the page or playlist doesn't show up
+
+The supervisor's server sends `Cache-Control: no-cache`, so Chromium checks
+every file with the server each time it loads, and a browser restart (step 4)
+always picks up the current files. Before 2026-11-20 it used plain
+`python3 -m http.server`, which sends no caching instructions. Chromium then
+decided by itself that files unchanged for weeks were still fresh, and
+showed its own old copy without asking. If that ever seems to be happening
+again, check that the page was actually fetched after the restart:
+
+```bash
+grep 'GET /local-display.html' http.log | tail -1
+```
+
+A one-off fix is to stop Chromium and delete its cache:
+`rm -rf ~/.config/labtv-kiosk/Default/Cache`. Then restart it as in step 4.
+
 ### A video plays but the picture stutters
 
 The Pi 4 can only decode H.264 in hardware, and the script asks for H.264
