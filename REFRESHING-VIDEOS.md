@@ -262,7 +262,7 @@ grep 'GET /local-display.html' http.log | tail -1
 ```
 
 A one-off fix is to stop Chromium and delete its cache:
-`rm -rf ~/.config/labtv-kiosk/Default/Cache`. Then restart it as in step 4.
+`rm -rf ~/.cache/labtv-kiosk/Default/Cache`. Then restart it as in step 4.
 
 ### A video plays but the picture stutters
 
