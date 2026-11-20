@@ -217,23 +217,6 @@ fails: the card stays up and the page reloads every 60 seconds, so it recovers
 on its own once the files are there. It is not a crash. Check that
 `videos/*.mp4` exist and that the download finished.
 
-### The display is plain white
-
-Chromium is up but its page never loaded (2026-11-20: after a power cut, its
-network service crashed mid-load). The supervisor now catches this on its own:
-the page sends a heartbeat (`HEAD videos/playlist.js?hb=...`) every minute, and
-if none arrives for 5 minutes (counted from 3 minutes after each browser start)
-it restarts Chromium. It does this at most 3 times an hour. Look in `kiosk.log`
-for `no heartbeat from the page`, and for `HEARTBEAT WATCHDOG GAVE UP`, which
-means the restarts didn't help and something else is wrong. The heartbeats
-themselves are in `http.log`:
-
-```bash
-grep -F '?hb=' http.log | tail -3
-```
-
-To recover by hand, restart the browser the usual way (step 4).
-
 ### A video plays but the picture stutters
 
 The Pi 4 can only decode H.264 in hardware, and the script asks for H.264
